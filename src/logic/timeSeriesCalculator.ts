@@ -1,20 +1,34 @@
-import type { MachineStatus, OccupiedTime } from "../types/machineStatus";
+// utils/buildOccupancySeries.ts
+import type { Task, TimePoint } from "../types/machineStatus";
 
-export const timeSeriesCalculator = (
-  machineStatus: MachineStatus[],
-): OccupiedTime[] => {
-  const occupiedTime: OccupiedTime[] = [];
+export const buildOccupancySeries = (
+  tasks: readonly Task[],
+  machineCount = 2,
+  stepMin = 10,                // ← 10 分刻み
+): TimePoint[] => {
+  const MIN_MS = 60 * 1000;
 
-  for (const machine of machineStatus) {
-    const { status } = machine;
-    const duration =
-      (status.endTime.getTime() - status.startTime.getTime()) / 1000; // in seconds
+  // タスク最小開始日の 09:00〜18:00 を勤務帯に
+  const firstStart = tasks.map(t => t.taskStartTime).reduce((a, b) => (a < b ? a : b));
+  const day = new Date(firstStart);
+  const dayStart = new Date(day.setHours(9, 0, 0, 0));
+  const dayEnd = new Date(day.setHours(18, 0, 0, 0));
 
-    occupiedTime.push({
-      id: machine.id,
-      duration,
+  const series: TimePoint[] = [];
+  for (let tMs = dayStart.getTime(); tMs <= dayEnd.getTime(); tMs += stepMin * MIN_MS) {
+    const t = new Date(tMs);
+
+    // その時点で動いているタスク数
+    const running = tasks.filter(
+      task => task.taskStartTime <= t && t < task.taskEndTime,
+    ).length;
+
+    series.push({
+      t,
+      remainingJob: running,      // ← もう使わないがプロパティ保持
+      remainingCap: machineCount,
+      ratio: running / machineCount, // 0〜1 (超えたら過負荷)
     });
   }
-
-  return occupiedTime;
-}
+  return series;
+};
